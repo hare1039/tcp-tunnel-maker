@@ -98,6 +98,7 @@ public:
         target_server_ep_ = resolver.resolve(server_host, server_port);
         std::string_view next = sv.substr(std::distance(sv.begin(), delim));
 
+        std::cout << "connecting to " << server_sv << std::endl;
         next.remove_prefix(std::min(next.find_first_not_of(" "), next.size()));
 
         return next;

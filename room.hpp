@@ -34,7 +34,7 @@ public:
             BOOST_SCOPE_EXIT (self, &rooms_) {
                 auto it = std::remove(rooms_.begin(), rooms_.end(), self->shared_from_this());
                 rooms_.erase(it, rooms_.end());
-                std::cout << "closing room" << std::endl;
+                std::cout << "close room #" << self->id() << std::endl;
             } BOOST_SCOPE_EXIT_END;
 
             lib::co_spawn(executor,
@@ -45,7 +45,7 @@ public:
                           lib::detached);
             auto && stoc = self->redir(self->target_server_socket_, self->socket_);
 
-            std::cout << "setup room" << std::endl;
+            std::cout << "setup room #" << self->id() << std::endl;
             co_await stoc;
         }
         catch (const std::exception & e)
@@ -66,39 +66,26 @@ public:
             for (;;)
             {
                 std::size_t read_n = co_await from.async_read_some(boost::asio::buffer(raw_buf), token);
-                lib::co_spawn(executor,
-                              boost::asio::bind_executor(self->strand_,
-                                  [self, raw_buf, read_n, &to]() mutable
-                                  {
-                                      return self->send(to, raw_buf, read_n);
-                                  }),
-                              lib::detached);
+                std::ignore = co_await boost::asio::async_write(to, boost::asio::buffer(raw_buf, read_n), token);
             }
         }
-        catch (const std::exception & e)
+        catch (const boost::system::system_error & e)
         {
-            std::cerr << "room::redir() exception: " << e.what() << std::endl;
+            if (e.code() != boost::asio::error::eof)
+                std::cerr << "room::redir() exception: " << e.what() << std::endl;
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "room::redir() std exception: " << e.what() << std::endl;
         }
         boost::system::error_code ec;
         from.shutdown(lib::tcp::socket::shutdown_receive, ec);
-        if (ec)
-            std::cerr << ec.message() << std::endl;
-
         to.shutdown(lib::tcp::socket::shutdown_send, ec);
-        if (ec)
-            std::cerr << ec.message() << std::endl;
-
         co_return;
     }
 
-private:
-    lib::awaitable<void> send(lib::tcp::socket &to, std::array<char, def::bufsize>& raw_buf, std::size_t& read_n)
-    {
-        auto self   = shared_from_this();
-        auto token  = co_await lib::this_coro::token();
-        std::ignore = co_await boost::asio::async_write(to, boost::asio::buffer(raw_buf, read_n), token);
-        co_return;
-    }
+    inline
+    std::size_t id() { return std::hash<std::shared_ptr<room>>{}(shared_from_this()); }
 };
 
 }// namespace pika
